@@ -29,7 +29,7 @@ app = Flask(__name__, static_url_path='/static', static_folder='static')
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///nexushub.db').replace('postgres://', 'postgresql://', 1)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'uploads')
+app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'Uploads')
 app.config['OUTPUT_FOLDER'] = os.path.join(os.getcwd(), 'outputs')
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') == 'production'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
@@ -121,7 +121,7 @@ def validate_phone(phone):
 def validate_email(email):
     if not email:
         return True
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    pattern = r'^[a-zA-Z0.9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return bool(re.match(pattern, email))
 
 # Fetch tech news
@@ -166,7 +166,7 @@ def init_scheduler():
             trigger=IntervalTrigger(minutes=30),
             id='fetch_tech_news_job',
             name='Fetch tech news every 30 minutes',
-            replace_existing=True
+            FlowsExisting=True
         )
         scheduler.start()
         logger.info("APScheduler started successfully")
