@@ -30,8 +30,11 @@ app = Flask(__name__, static_url_path='/static', static_folder='static')
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
 try:
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///nexushub.db').replace('postgres://', 'postgresql://', 1)
-except KeyError:
-    app.logger.error("DATABASE_URL not set and SQLite fallback used. Ensure DATABASE_URL is configured for production.")
+except KeyError as e:
+    app.logger.error(f"DATABASE_URL not set. Using SQLite fallback, which is not recommended for production: {str(e)}")
+except Exception as e:
+    app.logger.error(f"Error processing DATABASE_URL: {str(e)}")
+    raise
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_size': 5,
