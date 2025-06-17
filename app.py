@@ -1,4 +1,4 @@
-print("Running Nexus Hub app.py version 2025-06-12")
+print("Running Nexus Hub app.py version 2025-06-17")
 import os
 import requests
 from flask import Flask, request, render_template, redirect, url_for, send_from_directory, session, flash
@@ -25,13 +25,13 @@ import urllib.parse
 # Load environment variables
 load_dotenv()
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'secret-key')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///nexushub.db')
+app = Flask(__name__, static_url_path='/static', static_folder='static')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///nexushub.db').replace('postgres://', 'postgresql://', 1)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER', 'app/Uploads')
-app.config['OUTPUT_FOLDER'] = os.environ.get('OUTPUT_FOLDER', 'app/outputs')
-app.config['SESSION_COOKIE_SECURE'] = True  # Disabled for local testing
+app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'uploads')
+app.config['OUTPUT_FOLDER'] = os.path.join(os.getcwd(), 'outputs')
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') == 'production'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB file size limit
@@ -42,7 +42,7 @@ app.config['UNIT_DELETE_SECRET_KEY'] = os.environ.get('UNIT_DELETE_SECRET_KEY', 
 app.config['ACTIVATION_LINK'] = os.environ.get('ACTIVATION_LINK', 'irm https://get.activated.win | iex')
 
 db = SQLAlchemy(app)
-socketio = SocketIO(app, cors_allowed_origins=['http://localhost:5100', 'http://127.0.0.1:5100', 'http://0.0.0.0:5100', 'https://nexus-hub.fly.dev'])
+socketio = SocketIO(app, cors_allowed_origins='*', async_mode='eventlet')
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
@@ -56,7 +56,7 @@ tech_news_cache = []
 def add_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' http://localhost:5100 https://cdn.socket.io https://nexus-hub.fly.dev; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:5100 wss://localhost:5100 ws://nexus-hub.fly.dev wss://nexus-hub.fly.dev;"
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://cdn.socket.io; style-src 'self' 'unsafe-inline'; connect-src 'self' wss://* ws://*;"
     return response
 
 # Ensure upload/output folders exist
@@ -360,9 +360,6 @@ def ai_chat():
             {"name": "website cloning", "url": "https://same.new/", "is_website": True},
             {"name": "Type any six numbers or letters after the (/) in the url", "url": "https://prnt.sc/", "is_website": True}
         ]
-
-        
-
         return render_template('ai_chat.html', llm_links=llm_links, form=TelegramLinkForm())
     except Exception as e:
         logger.error(f"Error in /ai_chat: {str(e)}")
@@ -401,7 +398,6 @@ def group_setup():
             logger.error(f"Error in /group_setup: {str(e)}")
     return render_template('group_setup.html')
 
-
 @app.route('/Uploads/<filename>')
 def uploaded_file(filename):
     logger.info(f"Serving file: {filename}")
@@ -436,7 +432,7 @@ def handle_connect():
     emit('response', {'msg': 'Connected to Nexus Hub'})
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
+    port = int(os.environ.get('PORT', 5000))
     logger.info(f"Running on port {port}")
     fetch_tech_news()  # Initial news fetch
-    socketio.run(app, host='0.0.0.0', port=port, debug=True)
+    socketio.run(app, host='0.0.0.0', port=port, debug=False)
