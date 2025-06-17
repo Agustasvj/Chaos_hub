@@ -21,14 +21,24 @@ from apscheduler.triggers.interval import IntervalTrigger
 import atexit
 import time
 import urllib.parse
+from sqlalchemy.exc import OperationalError
 
 # Load environment variables
 load_dotenv()
 
 app = Flask(__name__, static_url_path='/static', static_folder='static')
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///nexushub.db').replace('postgres://', 'postgresql://', 1)
+try:
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///nexushub.db').replace('postgres://', 'postgresql://', 1)
+except KeyError:
+    app.logger.error("DATABASE_URL not set and SQLite fallback used. Ensure DATABASE_URL is configured for production.")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_size': 5,
+    'max_overflow': 10,
+    'pool_timeout': 30,
+    'pool_recycle': 1800,
+}
 app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'Uploads')
 app.config['OUTPUT_FOLDER'] = os.path.join(os.getcwd(), 'outputs')
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') == 'production'
@@ -42,7 +52,7 @@ app.config['UNIT_DELETE_SECRET_KEY'] = os.environ.get('UNIT_DELETE_SECRET_KEY', 
 app.config['ACTIVATION_LINK'] = os.environ.get('ACTIVATION_LINK', 'irm https://get.activated.win | iex')
 
 db = SQLAlchemy(app)
-socketio = SocketIO(app, cors_allowed_origins='*', async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins='https://nexus-hub.onrender.com', async_mode='eventlet')
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
@@ -56,7 +66,7 @@ tech_news_cache = []
 def add_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://cdn.socket.io; style-src 'self' 'unsafe-inline'; connect-src 'self' wss://* ws://*;"
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://cdn.socket.io; style-src 'self' 'unsafe-inline'; connect-src 'self' wss://nexus-hub.onrender.com ws://nexus-hub.onrender.com;"
     return response
 
 # Ensure upload/output folders exist
@@ -121,7 +131,7 @@ def validate_phone(phone):
 def validate_email(email):
     if not email:
         return True
-    pattern = r'^[a-zA-Z0.9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return bool(re.match(pattern, email))
 
 # Fetch tech news
@@ -166,7 +176,7 @@ def init_scheduler():
             trigger=IntervalTrigger(minutes=30),
             id='fetch_tech_news_job',
             name='Fetch tech news every 30 minutes',
-            FlowsExisting=True
+            replace_existing=True
         )
         scheduler.start()
         logger.info("APScheduler started successfully")
@@ -176,12 +186,16 @@ def init_scheduler():
 
 # Initialize database
 with app.app_context():
-    db.create_all()
-    if not Admin.query.first():
-        hashed_password = bcrypt.hashpw('admin123'.encode('utf-8'), bcrypt.gensalt())
-        admin = Admin(username='admin', password_hash=hashed_password)
-        db.session.add(admin)
-        db.session.commit()
+    try:
+        db.create_all()
+        if not Admin.query.first():
+            hashed_password = bcrypt.hashpw('admin123'.encode('utf-8'), bcrypt.gensalt())
+            admin = Admin(username='admin', password_hash=hashed_password)
+            db.session.add(admin)
+            db.session.commit()
+    except OperationalError as e:
+        logger.error(f"Database initialization failed: {str(e)}")
+        raise Exception(f"Failed to connect to database: {str(e)}")
 
 init_scheduler()
 
